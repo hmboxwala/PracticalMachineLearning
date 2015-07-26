@@ -1,0 +1,87 @@
+---
+title: "Practical Machine Learning - Project"
+author: "Hussain Boxwala"
+date: "Sunday, July 26, 2015"
+output: html_document
+---
+
+## Synopsis
+This project builds a machine learning model to predict the manner in which the participants did the exercise. The data for this project comes from <http://groupware.les.inf.puc-rio.br/har>.  One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.The dataset has data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Loading and Cleaning the data
+
+It is assumed that the data has been downloaded and placed in the current working directory. Now let us load the data in R:
+```{r}
+train <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+dim(train)
+dim(test)
+```
+
+As we can see, the training set has `r nrow(train)` rows and `r ncol(train)` columns and the testing set has `r nrow(test)` rows and `r ncol(test)` columns.
+
+We would need to clean these datasets first before we build our model. In the **Figure 1 of Appendix** you will see that a large number of columns in the test dataset have only "NA" values and hence these columns would be of no use while prediction and could also cause error while prediction in most of the models. So our first step would be to find all such columns and remove them from the train and test set. the nearZeroVar() function from the caret package makes this a breeze.
+
+```{r,warning=FALSE, message=FALSE}
+library(caret)
+nzvTest <- nearZeroVar(test,saveMetrics=TRUE)
+train1 <- train[,-match(rownames(nzvTest)[nzvTest$zeroVar==TRUE],names(train))]
+test1 <- test[,-match(rownames(nzvTest)[nzvTest$zeroVar==TRUE],names(test))]
+```
+
+Now let us convert the cvtd_timestamp to a date format and extract useful information such as year, month, etc. 
+```{r,warning=FALSE, message=FALSE}
+train1$cvtd_timestamp <- strptime(train1$cvtd_timestamp,"%d/%m/%Y %H:%M")
+test1$cvtd_timestamp <- strptime(test1$cvtd_timestamp,"%d/%m/%Y %H:%M")
+
+library(lubridate)
+train1$year <- year(train1$cvtd_timestamp)
+train1$month <- month(train1$cvtd_timestamp)
+train1$week <- week(train1$cvtd_timestamp)
+test1$year <- year(test1$cvtd_timestamp)
+test1$month <- month(test1$cvtd_timestamp)
+test1$week <- week(test1$cvtd_timestamp)
+```
+
+## Building the model and Cross-Validation
+
+### Split into training and cross-validation sets
+
+First let us split the train set into two subsets - training and cross-validation sets. Cross-validation is required to test the performance of our model on a hold out set and also estimate the Out-of-Bag(OOB) error.
+
+```{r,,warning=FALSE, message=FALSE}
+library(caTools)
+set.seed(123)
+spl <- sample.split(train1$classe,0.8)
+training <- train1[spl==TRUE,]
+crossval <- train1[spl==FALSE,]
+```
+
+### Build the model
+
+We would be using randomForest to build our prediction model as it is great at capturing non-linearities and also performs bagging in building the model. Instead of using train() from caret package, we would be using the randomForest function directly from the randomForest package. We would be excluding "cvtd_timestamp" as a predictor since we have already extracted the required information from it. 
+
+```{r, warning=FALSE, message=FALSE}
+library(randomForest)
+rf <- randomForest(classe~.,training[,-5],ntree=10)
+```
+
+## Out-of-Bag(OOB) error estimate
+
+Now let us see the OOB error first that is calculated by our model itself:
+```{r}
+rf
+```
+An OOB estimated error of 0.86% means that we can expect an accuracy of 99.14%. Now let us do an actual test on our hold out or cross-validation set - 
+```{r}
+pred <- predict(rf,newdata=crossval)
+table(crossval$classe,pred)
+```
+
+As we can see from the confusion matrix above that we have indeed obtained a very high accuracy with this model.
+
+## Appendix
+### Figure 1.
+```{r}
+str(test)
+```
